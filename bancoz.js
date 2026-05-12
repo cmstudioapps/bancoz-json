@@ -1170,7 +1170,7 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
             case 'criar':
             case 'create':
                 endpoint = '/criar-arquivo';
-                if (no === null || typeof no === 'undefined') {
+                if (this.noNaoInformado(no)) {
                     const leituraExistente = await fetch(`${BASE_URL}/ler-arquivo`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1191,7 +1191,7 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                 body = {
                     api_key: this.apiKey,
                     filename: filenameBase,
-                    content: no === null || typeof no === 'undefined' ? dados : { [no]: dados }
+                    content: this.noNaoInformado(no) ? dados : { [no]: dados }
                 };
                 break;
 
@@ -1468,7 +1468,7 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
         const caminhoArquivo = path.join(pasta, nomeArquivo);
         const caminhoBackup = `${caminhoArquivo}.backup`;
 
-        const operacaoApenasLeitura = tipo === 'ler' || tipo === 'read';
+        const operacaoApenasLeitura = this.operacaoEhLeitura(tipo);
 
         const executar = async () => {
             this.logInterno(`Iniciando operação: ${tipo} em ${arquivo}/${no}`);
@@ -1479,8 +1479,8 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                 let dadosArquivo = dadosLidos;
 
                 if (
-                    ['criar', 'create'].includes(tipo) &&
-                    (no === null || typeof no === 'undefined') &&
+                    this.operacaoEhCriacao(tipo) &&
+                    this.noNaoInformado(no) &&
                     conteudo !== null &&
                     this.jsonTemDados(dadosArquivo)
                 ) {
@@ -1495,10 +1495,10 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                 }
 
                 // VERIFICAÇÃO DE LIMITES PARA CRIAR/ATUALIZAR (skip remote)
-                if (!this.apiKey && ['criar', 'create', 'atualizar', 'update'].includes(tipo)) {
+                if (!this.apiKey && (this.operacaoEhCriacao(tipo) || this.operacaoEhAtualizacao(tipo))) {
                     const dadosParaLimite =
-                        ['criar', 'create'].includes(tipo) &&
-                        (no === null || typeof no === 'undefined')
+                        this.operacaoEhCriacao(tipo) &&
+                        this.noNaoInformado(no)
                             ? dados
                             : { [no]: dados };
                     await this.verificarLimite(arquivo, dadosParaLimite);
@@ -1510,14 +1510,14 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                 switch (tipo) {
                     case 'criar':
                     case 'create':
-                        if (no === null || typeof no === 'undefined') {
+                        if (this.noNaoInformado(no)) {
                             dadosArquivo = dados;
                         } else {
                             dadosArquivo[no] = dados;
                         }
                         resultado = dados;
                         this.logInterno(
-                            no === null || typeof no === 'undefined'
+                            this.noNaoInformado(no)
                                 ? `Dados criados em ${arquivo}`
                                 : `Dados criados em ${arquivo}/${no}`
                         );
@@ -1526,9 +1526,6 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                     case 'atualizar':
                     case 'update':
                         {
-                            const isObjetoSimples = (valor) =>
-                                valor !== null && typeof valor === 'object' && !Array.isArray(valor);
-
                             const mostrarNoTerminal = this.logAtivo;
                             const antesAtualizacao = mostrarNoTerminal
                                 ? this.clonarJson(dadosArquivo[no])
@@ -1537,7 +1534,7 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                             const chaveEspecifica =
                                 typeof chave === 'string' && chave.length > 0 ? chave : null;
                             const opcoes =
-                                isObjetoSimples(chave) && chaveEspecifica === null ? chave : null;
+                                this.isObjetoSimples(chave) && chaveEspecifica === null ? chave : null;
 
                             if (chaveEspecifica) {
                                 if (!dadosArquivo[no]) {
@@ -1551,12 +1548,12 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                                     `Chave '${chaveEspecifica}' atualizada em ${arquivo}/${no}`
                                 );
                                 if (mostrarNoTerminal) {
-                                    atualizacaoNoTerminal = {
+                                    atualizacaoNoTerminal = this.criarAtualizacaoTerminal(
                                         arquivo,
                                         no,
-                                        antes: antesAtualizacao,
-                                        depois: this.clonarJson(dadosArquivo[no]),
-                                    };
+                                        antesAtualizacao,
+                                        dadosArquivo[no]
+                                    );
                                 }
                                 break;
                             }
@@ -1567,22 +1564,22 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                                 resultado = dados;
                                 this.logInterno(`Nó completo atualizado em ${arquivo}/${no}`);
                                 if (mostrarNoTerminal) {
-                                    atualizacaoNoTerminal = {
+                                    atualizacaoNoTerminal = this.criarAtualizacaoTerminal(
                                         arquivo,
                                         no,
-                                        antes: antesAtualizacao,
-                                        depois: this.clonarJson(dadosArquivo[no]),
-                                    };
+                                        antesAtualizacao,
+                                        dadosArquivo[no]
+                                    );
                                 }
                                 break;
                             }
 
-                            if (isObjetoSimples(dados)) {
+                            if (this.isObjetoSimples(dados)) {
                                 // Atualização parcial via objeto: cria as chaves se não existirem
                                 if (!dadosArquivo[no]) {
                                     dadosArquivo[no] = {};
                                 }
-                                if (!isObjetoSimples(dadosArquivo[no])) {
+                                if (!this.isObjetoSimples(dadosArquivo[no])) {
                                     throw new Error(`Nó '${no}' não é um objeto em ${arquivo}`);
                                 }
 
@@ -1596,12 +1593,12 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                                 resultado = dadosArquivo[no];
                                 this.logInterno(`Nó '${no}' atualizado em ${arquivo}`);
                                 if (mostrarNoTerminal) {
-                                    atualizacaoNoTerminal = {
+                                    atualizacaoNoTerminal = this.criarAtualizacaoTerminal(
                                         arquivo,
                                         no,
-                                        antes: antesAtualizacao,
-                                        depois: this.clonarJson(dadosArquivo[no]),
-                                    };
+                                        antesAtualizacao,
+                                        dadosArquivo[no]
+                                    );
                                 }
                                 break;
                             }
@@ -1611,12 +1608,12 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                             resultado = dados;
                             this.logInterno(`Nó completo atualizado em ${arquivo}/${no}`);
                             if (mostrarNoTerminal) {
-                                atualizacaoNoTerminal = {
+                                atualizacaoNoTerminal = this.criarAtualizacaoTerminal(
                                     arquivo,
                                     no,
-                                    antes: antesAtualizacao,
-                                    depois: this.clonarJson(dadosArquivo[no]),
-                                };
+                                    antesAtualizacao,
+                                    dadosArquivo[no]
+                                );
                             }
                         }
                         break;
@@ -1624,14 +1621,9 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                     case 'deletar':
                     case 'delete':
                         {
-                            const isObjetoSimples = (valor) =>
-                                valor !== null && typeof valor === 'object' && !Array.isArray(valor);
-                            const temChave = (obj, key) =>
-                                Object.prototype.hasOwnProperty.call(obj, key);
-
                             const deletarChaves = dados;
                             const deletarNoInteiro =
-                                deletarChaves === null || typeof deletarChaves === 'undefined';
+                                this.noNaoInformado(deletarChaves);
 
                             if (deletarNoInteiro) {
                                 // Deletar o nó inteiro (modo antigo)
@@ -1652,7 +1644,7 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                                 break;
                             }
 
-                            if (!isObjetoSimples(dadosArquivo[no])) {
+                            if (!this.isObjetoSimples(dadosArquivo[no])) {
                                 throw new Error(`Nó '${no}' não é um objeto em ${arquivo}`);
                             }
 
@@ -1661,7 +1653,7 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                                 chavesParaDeletar = [deletarChaves];
                             } else if (Array.isArray(deletarChaves)) {
                                 chavesParaDeletar = deletarChaves;
-                            } else if (isObjetoSimples(deletarChaves)) {
+                            } else if (this.isObjetoSimples(deletarChaves)) {
                                 chavesParaDeletar = Object.keys(deletarChaves);
                             } else {
                                 throw new Error(
@@ -1670,7 +1662,7 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
                             }
 
                             const chavesInexistentes = chavesParaDeletar.filter(
-                                (k) => !temChave(dadosArquivo[no], k)
+                                (k) => !this.temChave(dadosArquivo[no], k)
                             );
 
                             if (chavesInexistentes.length > 0) {
@@ -1692,7 +1684,7 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
 
                     case 'ler':
                     case 'read':
-                        if (no === null || no === undefined) {
+                        if (this.noNaoInformado(no)) {
                             resultado = dadosArquivo;
                             this.logInterno(`Leitura completa de ${arquivo}`);
                         } else {
@@ -1758,6 +1750,41 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
     /**
      * Função de log interno
      */
+    operacaoEhLeitura(tipo) {
+        return tipo === 'ler' || tipo === 'read';
+    }
+
+    operacaoEhCriacao(tipo) {
+        return tipo === 'criar' || tipo === 'create';
+    }
+
+    operacaoEhAtualizacao(tipo) {
+        return tipo === 'atualizar' || tipo === 'update';
+    }
+
+    noNaoInformado(no) {
+        return no === null || typeof no === 'undefined';
+    }
+
+    isObjetoSimples(valor) {
+        return valor !== null && typeof valor === 'object' && !Array.isArray(valor);
+    }
+
+    temChave(obj, key) {
+        return Object.prototype.hasOwnProperty.call(obj, key);
+    }
+
+    criarAtualizacaoTerminal(arquivo, no, antes, depois) {
+        if (!this.logAtivo) return null;
+
+        return {
+            arquivo,
+            no,
+            antes,
+            depois: this.clonarJson(depois),
+        };
+    }
+
     logInterno(mensagem) {
         if (!this.logAtivo) return;
         
