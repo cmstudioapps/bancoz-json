@@ -341,7 +341,7 @@ Ou:
 node teste.js
 ```
 
-## Resumo
+## Objetivo da bancoz
 
 Use Bancoz quando voce quer persistencia simples, JSON legivel e codigo direto.
 
