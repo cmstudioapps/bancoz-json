@@ -1,6 +1,6 @@
 {
   "name": "bancoz",
-  "version": "2.0.8",
+  "version": "2.2.8",
   "description": "Biblioteca JSON DB local/remoto",
   "main": "./bancoz.js",
   "type": "module",

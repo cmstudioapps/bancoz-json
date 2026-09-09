@@ -19,7 +19,7 @@ vira automaticamente um arquivo JSON em `BANCO Z/usuarios.json`.
 - Seguro para uso local: escrita atomica e lock por arquivo para reduzir conflito entre operacoes.
 - Organizado: separa dados por arquivos e tambem aceita subpastas, como `loja/clientes`.
 - Hibrido: usa disco local por padrao, ou API remota quando voce define `api_key`.
-- Util: tem cache em memoria, backup, busca por texto, limites e analise dos arquivos.
+- Util: tem cache em memoria, backup, busca por texto, leitura de `.txt`, limites, analise dos arquivos e uma LLM local experimental.
 
 ## Bancoz vs fs
 
@@ -142,6 +142,15 @@ await bancoz.criar('produtos', 'cafe', {
 });
 ```
 
+Tambem da para criar/substituir o arquivo inteiro omitindo o no:
+
+```js
+await bancoz.criar('config', null, {
+  tema: 'claro',
+  versao: 1
+});
+```
+
 ### `ler(arquivo, no?)`
 
 Le um arquivo inteiro ou apenas um no.
@@ -150,6 +159,14 @@ Le um arquivo inteiro ou apenas um no.
 const todos = await bancoz.ler('produtos');
 const cafe = await bancoz.ler('produtos', 'cafe');
 ```
+
+Arquivos `.txt` tambem podem ser lidos diretamente:
+
+```js
+const texto = await bancoz.ler('llm/treino.txt');
+```
+
+Arquivos `.txt` suportam apenas leitura e nao usam nos.
 
 ### `atualizar(arquivo, no, dados)`
 
@@ -244,6 +261,13 @@ bancoz.getCache(true, 'files');
 bancoz.getCache(true, 'data');
 ```
 
+Para obter apenas o snapshot em codigo, sem imprimir no terminal:
+
+```js
+const cache = bancoz.getCache(false, 'files');
+console.log(cache.quantidade);
+```
+
 ## Busca
 
 Pesquise uma palavra em todos os JSONs locais:
@@ -270,7 +294,15 @@ bancoz.log(true);    // exibe logs no terminal
 bancoz.lang('en');   // logs em ingles
 ```
 
-Aliases em ingles tambem existem:
+Tambem existem aliases em ingles para configuracoes:
+
+```js
+await bancoz.backup(true);
+await bancoz.queue(true);
+await bancoz.language('en');
+```
+
+Aliases em ingles para CRUD:
 
 ```js
 await bancoz.create('users', 'ana', { name: 'Ana' });
@@ -296,6 +328,22 @@ await bancoz.limiteAvancado('usuarios', {
   0: { maxKeys: 100 },
   1: { maxKeys: 10, maxSubnodes: 50 }
 });
+
+const usoAvancado = await bancoz.getLimiteAvancado('usuarios');
+console.log(usoAvancado);
+```
+
+Aliases em ingles:
+
+```js
+await bancoz.setLimit('users', 100, 500, 50);
+await bancoz.advancedLimit('users', {
+  0: { maxKeys: 100 },
+  1: { maxKeys: 10 }
+});
+
+await bancoz.getLimit('users');
+await bancoz.getAdvancedLimit('users');
 ```
 
 ## Modo remoto
@@ -320,6 +368,15 @@ const relatorio = await bancoz.analise(true);
 console.log(relatorio.quantidadeArquivos);
 ```
 
+## Prompt no terminal
+
+Use `prompt()` para pedir texto no terminal sem configurar `readline` manualmente:
+
+```js
+const nome = await bancoz.prompt('Seu nome: ');
+await bancoz.criar('usuarios', bancoz.criarID(), { nome });
+```
+
 ## Gerar IDs
 
 ```js
@@ -327,9 +384,71 @@ const id = bancoz.criarID();
 await bancoz.criar('sessoes', id, { criadoEm: new Date().toISOString() });
 ```
 
+Tambem da para controlar os caracteres e o tamanho:
+
+```js
+const idCurto = bancoz.criarID('abcdef012345', 8);
+const idEnglish = bancoz.createID();
+```
+
+## LLM local experimental
+
+O Bancoz inclui uma mini engine textual local baseada em contexto, n-gram e frequencia. Ela nao usa API externa, embeddings ou rede neural.
+
+```js
+const IA = bancoz.llm();
+
+await IA.treinar('auto'); // ativa auto-treino com as mensagens recebidas
+await IA.treinar('bancoz salva dados em json local');
+
+const resposta = await IA.responder('bancoz salva', {
+  maxPalavras: 20
+});
+
+console.log(resposta);
+```
+
+O modelo e salvo em:
+
+```txt
+BANCO Z/
+  llm/
+    llm.json
+```
+
+Metodos disponiveis na engine:
+
+```js
+await IA.carregar();
+await IA.salvar();
+await IA.treinar('texto para treino');
+await IA.treinar(false); // ou 'manual', desativa auto-treino
+await IA.responder('mensagem', { maxPalavras: 24 });
+const aprendizado = await IA.aprendizado();
+```
+
+Tambem da para usar direto com `await` passando uma mensagem inicial:
+
+```js
+const resposta = await bancoz.llm('ola bancoz');
+```
+
+## CLI
+
+O pacote instala o comando `bancoz`.
+
+```bash
+bancoz help
+bancoz llm
+bancoz view-cache
+bancoz-view-cache
+```
+
+`bancoz llm` abre um chat local usando a LLM experimental. Os comandos de cache mostram o cache do processo atual do CLI; para ver o cache do seu app, use `bancoz.getCache()` dentro dele.
+
 ## Teste local
 
-Este repositorio inclui um exemplo em `teste.js`.
+Este repositorio inclui exemplos em `teste.js` e `testeIA.js`.
 
 ```bash
 npm start
@@ -339,6 +458,7 @@ Ou:
 
 ```bash
 node teste.js
+node testeIA.js
 ```
 
 ## Objetivo da bancoz

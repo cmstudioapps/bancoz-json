@@ -703,11 +703,16 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
         }
 
         const ultimoIndice = partes.length - 1;
-        if (!partes[ultimoIndice].endsWith('.json')) {
+        const ultimo = partes[ultimoIndice].toLowerCase();
+        if (!ultimo.endsWith('.json') && !ultimo.endsWith('.txt')) {
             partes[ultimoIndice] = `${partes[ultimoIndice]}.json`;
         }
 
         return path.join(...partes);
+    }
+
+    arquivoEhTexto(nomeArquivo) {
+        return typeof nomeArquivo === 'string' && nomeArquivo.toLowerCase().endsWith('.txt');
     }
 
     // ==================== CONFIGURAÇÕES ====================
@@ -1139,6 +1144,231 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
         return this.pesquisar(termo, alvo);
     }
 
+    /**
+     * Mini engine textual experimental baseada em n-gram simples.
+     * Nao usa API externa, rede neural, embeddings ou servicos online.
+     * @param {string} mensagemInicial - Texto usado quando o retorno for aguardado com await.
+     * @returns {object} Engine com treinar(), responder(), salvar(), carregar() e aprendizado().
+     */
+    llm(mensagemInicial = '') {
+        const bancoz = this;
+        const arquivoAprendizado = async () => {
+            const pastaBanco = await bancoz.garantirPastaBanco();
+            const pasta = path.join(pastaBanco, 'llm');
+            await fs.mkdir(pasta, { recursive: true });
+            return path.join(pasta, 'llm.json');
+        };
+
+        const criarModeloVazio = () => ({
+            versao: 1,
+            tipo: 'bancoz-llm-experimental',
+            ordem: 2,
+            autoTreino: false,
+            totalTextos: 0,
+            totalTokens: 0,
+            frequencias: {},
+            contextos: {},
+            atualizadoEm: null
+        });
+
+        const normalizarTexto = (texto) => {
+            if (typeof texto !== 'string') return '';
+            return texto
+                .toLowerCase()
+                .normalize('NFC')
+                .replace(/[^\p{L}\p{N}.'_-]+/gu, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        };
+
+        const tokenizar = (texto) => {
+            const normalizado = normalizarTexto(texto);
+            if (normalizado.length === 0) return [];
+
+            return normalizado
+                .split(' ')
+                .map((token) => token.replace(/^[.'_-]+|[.'_-]+$/g, ''))
+                .filter((token) => token.length > 0);
+        };
+
+        const tokenizarSequencias = (texto) => String(texto)
+            .split(/[!?;]+|\.(?=\s|$)|\n+/g)
+            .map((parte) => tokenizar(parte))
+            .filter((tokens) => tokens.length > 0);
+
+        const garantirModelo = (dados) => ({
+            ...criarModeloVazio(),
+            ...(bancoz.isObjetoSimples(dados) ? dados : {}),
+            frequencias: bancoz.isObjetoSimples(dados?.frequencias) ? dados.frequencias : {},
+            contextos: bancoz.isObjetoSimples(dados?.contextos) ? dados.contextos : {}
+        });
+
+        const somarFrequencia = (mapa, chave, valor = 1) => {
+            mapa[chave] = (Number(mapa[chave]) || 0) + valor;
+        };
+
+        const escolherPorPeso = (opcoes) => {
+            if (!bancoz.isObjetoSimples(opcoes)) return null;
+
+            const entradas = Object.entries(opcoes)
+                .filter(([, peso]) => Number(peso) > 0)
+                .sort((a, b) => {
+                    const diferencaPeso = Number(b[1]) - Number(a[1]);
+                    return diferencaPeso !== 0 ? diferencaPeso : a[0].localeCompare(b[0], 'pt-BR');
+                });
+
+            if (entradas.length === 0) return null;
+
+            const total = entradas.reduce((soma, [, peso]) => soma + Number(peso), 0);
+            let alvo = Math.random() * total;
+
+            for (const [palavra, peso] of entradas) {
+                alvo -= Number(peso);
+                if (alvo <= 0) return palavra;
+            }
+
+            return entradas[0][0];
+        };
+
+        const engine = {
+            modelo: criarModeloVazio(),
+            carregado: false,
+            mensagemInicial: typeof mensagemInicial === 'string' ? mensagemInicial : '',
+
+            async carregar() {
+                if (this.carregado) return this.modelo;
+
+                const caminho = await arquivoAprendizado();
+                const { dados } = await bancoz.lerJsonComRetry(caminho);
+                this.modelo = garantirModelo(dados);
+                this.carregado = true;
+                return this.modelo;
+            },
+
+            async salvar() {
+                await this.carregar();
+                this.modelo.atualizadoEm = new Date().toISOString();
+
+                const caminho = await arquivoAprendizado();
+                await bancoz.comLockArquivo(caminho, async () => {
+                    await bancoz.escreverArquivoAtomico(
+                        caminho,
+                        JSON.stringify(this.modelo, null, 2)
+                    );
+                });
+
+                return this.modelo;
+            },
+
+            async treinar(texto) {
+                await this.carregar();
+
+                if (texto === 'auto') {
+                    this.modelo.autoTreino = true;
+                    await this.salvar();
+                    return true;
+                }
+
+                if (texto === false || texto === 'manual') {
+                    this.modelo.autoTreino = false;
+                    await this.salvar();
+                    return true;
+                }
+
+                if (typeof texto !== 'string') {
+                    throw new TypeError(`Parametro 'texto' deve ser uma string`);
+                }
+
+                const sequencias = tokenizarSequencias(texto);
+                if (sequencias.length === 0) return false;
+
+                for (const tokens of sequencias) {
+                    for (const palavra of tokens) {
+                        somarFrequencia(this.modelo.frequencias, palavra);
+                    }
+
+                    for (let i = 0; i < tokens.length - 1; i++) {
+                        const proxima = tokens[i + 1];
+
+                        const contextoUmaPalavra = tokens[i];
+                        if (!this.modelo.contextos[contextoUmaPalavra]) {
+                            this.modelo.contextos[contextoUmaPalavra] = {};
+                        }
+                        somarFrequencia(this.modelo.contextos[contextoUmaPalavra], proxima);
+
+                        if (i > 0) {
+                            const contextoDuasPalavras = `${tokens[i - 1]} ${tokens[i]}`;
+                            if (!this.modelo.contextos[contextoDuasPalavras]) {
+                                this.modelo.contextos[contextoDuasPalavras] = {};
+                            }
+                            somarFrequencia(this.modelo.contextos[contextoDuasPalavras], proxima);
+                        }
+                    }
+                }
+
+                this.modelo.totalTextos += 1;
+                this.modelo.totalTokens += sequencias.reduce((total, tokens) => total + tokens.length, 0);
+                await this.salvar();
+                return true;
+            },
+
+            async responder(texto = '', opcoes = {}) {
+                await this.carregar();
+
+                if (typeof texto !== 'string') {
+                    throw new TypeError(`Parametro 'texto' deve ser uma string`);
+                }
+
+                if (this.modelo.autoTreino && texto.trim().length > 0) {
+                    await this.treinar(texto);
+                }
+
+                const maxPalavras = Number.isInteger(opcoes.maxPalavras)
+                    ? Math.max(1, opcoes.maxPalavras)
+                    : 24;
+
+                const entrada = tokenizar(texto);
+                const contexto = entrada.slice(-this.modelo.ordem);
+                const geradas = [];
+
+                for (let i = 0; i < maxPalavras; i++) {
+                    const chaveDuas = contexto.slice(-2).join(' ');
+                    const chaveUma = contexto.slice(-1).join(' ');
+                    let tabela = chaveDuas ? this.modelo.contextos[chaveDuas] : null;
+
+                    if (!tabela && (geradas.length === 0 || contexto.length < 2)) {
+                        tabela = chaveUma ? this.modelo.contextos[chaveUma] : null;
+                    }
+
+                    const proxima = escolherPorPeso(tabela);
+                    if (!proxima) break;
+
+                    geradas.push(proxima);
+                    contexto.push(proxima);
+
+                    if (geradas.length > 3) {
+                        const ultimas = geradas.slice(-4).join(' ');
+                        const anteriores = geradas.slice(-8, -4).join(' ');
+                        if (ultimas === anteriores) break;
+                    }
+                }
+
+                return geradas.join(' ');
+            },
+
+            async aprendizado() {
+                await this.carregar();
+                return bancoz.clonarJson(this.modelo);
+            },
+
+            then(resolve, reject) {
+                return this.responder(this.mensagemInicial).then(resolve, reject);
+            }
+        };
+
+        return engine;
+    }
+
     async queue(valor) {
         return this.fila(valor);
     }
@@ -1469,6 +1699,25 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
         const caminhoBackup = `${caminhoArquivo}.backup`;
 
         const operacaoApenasLeitura = this.operacaoEhLeitura(tipo);
+
+        if (!operacaoApenasLeitura && this.arquivoEhTexto(nomeArquivo)) {
+            throw new Error(`Arquivos .txt suportam apenas leitura com ler().`);
+        }
+
+        if (operacaoApenasLeitura && this.arquivoEhTexto(nomeArquivo)) {
+            if (!this.noNaoInformado(no)) {
+                throw new Error(`Arquivos .txt nao possuem nos. Use ler('${arquivo}') sem segundo parametro.`);
+            }
+
+            try {
+                const conteudoTxt = await fs.readFile(caminhoArquivo, 'utf8');
+                this.logInterno(`Leitura de texto completa de ${arquivo}`);
+                return conteudoTxt;
+            } catch (erro) {
+                if (erro && erro.code === 'ENOENT') return null;
+                throw erro;
+            }
+        }
 
         const executar = async () => {
             this.logInterno(`Iniciando operação: ${tipo} em ${arquivo}/${no}`);
