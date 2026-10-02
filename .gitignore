@@ -1,0 +1,26 @@
+# Pastas de desenvolvimento e testes
+BANCO Z/
+BANCO Z TESTE/
+BENCHMARK_DB/
+benchmark/
+BENCH_JSON/
+BENCH_ENGINE/
+engine/tests/
+
+# Outras linguagens portadas (Nao devem ir no NPM)
+python/
+go/
+build/
+
+# Lixo e modulos locais
+node_modules/
+.env
+.DS_Store
+*.log
+*.tmp*
+*.lock
+
+# Arquivos temporarios do usuario
+teste.js
+teste.json
+testeIA.js

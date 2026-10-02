@@ -4,6 +4,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import readline from 'readline';
+import { BancozEngine } from './engine/engine.js'; // Novo Engine
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 class Bancoz {
@@ -21,7 +22,12 @@ class Bancoz {
         this.cacheAtivo = false;
         this.cacheTtlMs = null;
         this.cacheArquivos = new Map();
+        
+        // Novo Storage Engine
+        this.storageMode = 'json'; // 'json' ou 'engine'
+        this._engineInstance = null;
     }
+
 
     // ==================== NOVOS MÉTODOS - LIMITES E ID ====================
 
@@ -798,6 +804,30 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
         this.cacheArquivos.clear();
         this.logInterno(`Pasta do Bancoz definida para ${this.pastaBancoCustomizada}`);
         return this.pastaBancoCustomizada;
+    }
+
+    /**
+     * Define o modo de armazenamento (storage engine).
+     * @param {string} modo - 'json' (padrão) ou 'engine' (Bancoz Engine avançado)
+     */
+    storage(modo) {
+        if (modo !== 'json' && modo !== 'engine') {
+            throw new Error(`Modo de storage inválido: ${modo}. Use 'json' ou 'engine'.`);
+        }
+        this.storageMode = modo;
+        this.logInterno(`Modo de storage alterado para: ${modo}`);
+        return this;
+    }
+
+    /**
+     * Retorna a instância do BancozEngine, inicializando-a se necessário.
+     * @private
+     */
+    _getEngine() {
+        if (!this._engineInstance) {
+            this._engineInstance = new BancozEngine(this.pastaBanco());
+        }
+        return this._engineInstance;
     }
 
     /**
@@ -1692,7 +1722,65 @@ async limite(arquivo, nodeLimit = null, subnodeLimit = null, arrayLimit = null) 
             return await this.processarOperacaoRemota({ tipo, arquivo, no, dados, chave });
         }
 
-        // === MODO LOCAL (padrão, 100% compatível) ===
+        // === MODO ENGINE (Novo armazenamento escalável) ===
+        if (this.storageMode === 'engine') {
+            const engine = this._getEngine();
+            const collection = this.normalizarNomeArquivo(arquivo).replace(/\.json$/i, '');
+            
+            switch (tipo) {
+                case 'criar':
+                    if (no === null) throw new Error("No modo 'engine', é obrigatório informar o nó (chave) na criação.");
+                    await engine.put(collection, no, dados);
+                    return dados;
+                case 'atualizar':
+                    if (no === null) throw new Error("No modo 'engine', é obrigatório informar o nó na atualização.");
+                    // Lógica de merge ou substituição
+                    if (chave && typeof chave === 'string') {
+                        let atual = await engine.get(collection, no) || {};
+                        atual[chave] = dados;
+                        await engine.put(collection, no, atual);
+                        return atual;
+                    } else if (chave && chave.substituir === true) {
+                        await engine.put(collection, no, dados);
+                        return dados;
+                    } else {
+                        // Merge parcial
+                        let atual = await engine.get(collection, no) || {};
+                        if (typeof atual !== 'object' || Array.isArray(atual)) {
+                            throw new Error(`Nó existente '${no}' não é um objeto para fazer merge.`);
+                        }
+                        const merged = { ...atual, ...dados };
+                        await engine.put(collection, no, merged);
+                        return merged;
+                    }
+                case 'deletar':
+                    if (no === null) throw new Error("No modo 'engine', é obrigatório informar o nó na deleção.");
+                    if (!dados) {
+                        // Excluir registro inteiro
+                        const existia = await engine.delete(collection, no);
+                        return existia;
+                    } else {
+                        // Excluir chaves específicas dentro do registro
+                        let atual = await engine.get(collection, no);
+                        if (!atual || typeof atual !== 'object' || Array.isArray(atual)) return false;
+                        
+                        const chavesDeletar = Array.isArray(dados) ? dados : (typeof dados === 'object' ? Object.keys(dados) : [dados]);
+                        for (const k of chavesDeletar) {
+                            delete atual[k];
+                        }
+                        await engine.put(collection, no, atual);
+                        return atual;
+                    }
+                case 'ler':
+                    if (no === null) {
+                        return await engine.getAll(collection);
+                    } else {
+                        return await engine.get(collection, no) || null;
+                    }
+            }
+        }
+
+        // === MODO LOCAL JSON (padrão, 100% compatível) ===
         const pasta = await this.garantirPastaBanco();
         const nomeArquivo = this.normalizarNomeArquivo(arquivo);
         const caminhoArquivo = path.join(pasta, nomeArquivo);

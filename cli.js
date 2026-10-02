@@ -7,6 +7,8 @@ const comando = args[0] || 'help';
 const deveVerCache = binChamado === 'bancoz-view-cache' || comando === 'view-cache';
 const deveAbrirLlm = comando === 'llm';
 
+const deveAbrirUi = comando === 'ui';
+
 function modoCache() {
   const indiceModo = binChamado === 'bancoz-view-cache' ? 0 : 1;
   const valor = args[indiceModo];
@@ -14,6 +16,25 @@ function modoCache() {
   if (valor === 'files' || valor === '--files') return 'files';
   if (valor === 'data' || valor === '--data') return 'data';
   return 'files';
+}
+
+async function abrirUi() {
+  const { spawn } = await import('child_process');
+  const mainFile = path.join(path.dirname(process.argv[1]), 'ui', 'main.js');
+  
+  console.log('Iniciando Bancoz UI...');
+  console.log('Se for a primeira vez, o Electron pode demorar alguns segundos para baixar na sua máquina.\n');
+  
+  const child = spawn('npx', ['electron', mainFile], {
+    stdio: 'inherit',
+    windowsHide: true
+  });
+  
+  child.on('close', (code) => {
+    if (code !== 0) {
+      console.error(`Bancoz UI foi encerrado com código ${code}. O Electron está instalado globalmente?`);
+    }
+  });
 }
 
 async function abrirChatLlm() {
@@ -53,6 +74,8 @@ if (deveVerCache) {
   bancoz.getCache(true, modoCache());
 } else if (deveAbrirLlm) {
   await abrirChatLlm();
+} else if (deveAbrirUi) {
+  await abrirUi();
 } else {
   console.log(`
 Bancoz v2.0.8
@@ -60,6 +83,7 @@ Pasta dados: ./BANCO Z/
 API remota: bancoz.api_key('key')
 
 Comandos:
+  bancoz ui          <- Abre a Interface Grafica do Bancoz no navegador
   bancoz llm         <- Abre um chat local para testar a LLM experimental
   bancoz-view-cache  <- Visualiza o cache do processo atual do CLI
   bancoz view-cache  <- Visualiza o cache do processo atual do CLI

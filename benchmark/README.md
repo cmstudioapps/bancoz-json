@@ -1,6 +1,6 @@
 # Bancoz Benchmark (Node.js vs Go)
 
-Este diretório contém os scripts oficiais de teste de benchmark para provar a paridade matemática e comparar o poder de fogo entre a versão original em **Node.js** e o novo port nativo em **Go**.
+Este diretório contém os scripts oficiais de teste de benchmark para provar a paridade matemática e comparar o poder de fogo entre as versões **Node.js**, **Go** e **Python**.
 
 ## O que o teste faz?
 

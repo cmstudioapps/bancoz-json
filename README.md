@@ -342,9 +342,34 @@ await bancoz.advancedLimit('users', {
   1: { maxKeys: 10 }
 });
 
-await bancoz.getLimit('users');
 await bancoz.getAdvancedLimit('users');
 ```
+
+## Modo Storage Engine (Avançado)
+
+O Bancoz agora possui um motor de armazenamento escalável embutido (inspirado no Bitcask), que permite lidar com gigabytes de dados e milhões de registros sem sobrecarregar a memória RAM. O modo Engine troca os arquivos JSON inteiros por leituras em O(1) diretamente no disco (offsets), WAL (Write-Ahead Log) para recuperação de falhas e compactação em background.
+
+Para ativar o modo Engine:
+
+```js
+bancoz.storage('engine'); // Padrão é 'json'
+
+// A API continua exatamente a mesma!
+await bancoz.criar('usuarios', 'caio', { nome: 'Caio' });
+const usuario = await bancoz.ler('usuarios', 'caio');
+```
+
+### Performance (Benchmark JSON vs Engine)
+Em nossos testes (escala de 5.000 registros), a arquitetura *Append-Only* provou ser absurdamente mais rápida que o modo JSON tradicional:
+
+| Operação (5K registros) | JSON Clássico | Novo Engine | Speedup |
+| :--- | :--- | :--- | :--- |
+| **Escrita em Massa** | ~50.9s | **~0.88s** | `57x 🚀` |
+| **Leitura em Massa** | ~41.9s | **~0.36s** | `114x 🚀` |
+| **Exclusão em Massa (10%)** | ~8.4s | **~0.06s** | `121x 🚀` |
+| **Atualização Única** | ~28.7ms | **~0.26ms**| `109x 🚀` |
+
+Os dados do Engine ficam salvos na subpasta `BANCO Z/db/`.
 
 ## Modo remoto
 
@@ -433,17 +458,23 @@ Tambem da para usar direto com `await` passando uma mensagem inicial:
 const resposta = await bancoz.llm('ola bancoz');
 ```
 
-## CLI
+## CLI e Bancoz UI (Interface Gráfica)
 
 O pacote instala o comando `bancoz`.
 
 ```bash
+bancoz ui          # Abre a Interface Gráfica moderna (novo!)
 bancoz help
 bancoz llm
 bancoz view-cache
 bancoz-view-cache
 ```
 
+### Bancoz UI
+Ao rodar `bancoz ui` (ou `node cli.js ui` localmente), o Bancoz inicia uma **Interface Gráfica Premium** construída com Electron. Ela abre magicamente direto do terminal sem precisar instalar pacotes `.deb`. 
+Na interface você consegue visualizar suas coleções (JSON Clássico ou modo Engine) e buscar, editar ou deletar registros com facilidade através de um painel escuro e minimalista!
+
+### Outros comandos
 `bancoz llm` abre um chat local usando a LLM experimental. Os comandos de cache mostram o cache do processo atual do CLI; para ver o cache do seu app, use `bancoz.getCache()` dentro dele.
 
 ## Teste local
