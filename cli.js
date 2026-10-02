@@ -20,7 +20,9 @@ function modoCache() {
 
 async function abrirUi() {
   const { spawn } = await import('child_process');
-  const mainFile = path.join(path.dirname(process.argv[1]), 'ui', 'main.js');
+  const { fileURLToPath } = await import('url');
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
+  const mainFile = path.join(__dirname, 'ui', 'main.js');
   
   console.log('Iniciando Bancoz UI...');
   console.log('Se for a primeira vez, o Electron pode demorar alguns segundos para baixar na sua máquina.\n');
