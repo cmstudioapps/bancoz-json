@@ -237,59 +237,75 @@ body {
 }
 
 /* Data Cards */
-.record-card {
-  background-color: var(--bg-panel);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  overflow: hidden;
-  transition: border-color 0.2s;
-}
-
-.record-card:hover {
-  border-color: #484f58;
-}
-
-.record-header {
-  padding: 12px 16px;
-  background-color: rgba(33, 38, 45, 0.5);
-  border-bottom: 1px solid var(--border-color);
+/* Data Toolbar */
+.data-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 16px;
+  padding: 0 32px;
 }
 
-.record-key {
-  font-family: 'Fira Code', monospace;
+.data-title {
+  font-size: 1.1rem;
   font-weight: 600;
-  color: var(--accent-green-hover);
+  color: #fff;
+  margin: 0;
 }
 
-.btn-delete {
-  background: transparent;
-  border: none;
+.btn-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background-color: transparent;
   color: var(--text-muted);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: 6px;
   cursor: pointer;
-  padding: 4px;
-  border-radius: 4px;
+  font-size: 0.85rem;
   transition: all 0.2s;
 }
 
-.btn-delete:hover {
-  color: var(--danger);
-  background-color: rgba(218, 54, 51, 0.1);
+.btn-copy:hover {
+  background-color: var(--bg-card);
+  color: #fff;
+  border-color: #8b949e;
 }
 
-.record-body {
-  padding: 16px;
-  font-family: 'Fira Code', monospace;
+/* Code Viewer */
+.code-viewer {
+  display: flex;
+  background-color: var(--bg-dark);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-family: 'Fira Code', 'Consolas', monospace;
   font-size: 0.85rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-all;
+  line-height: 1.6;
+  overflow: hidden;
+  margin: 0 32px 32px 32px;
 }
 
+.line-numbers {
+  padding: 16px 12px;
+  color: #484f58;
+  border-right: 1px solid var(--border-color);
+  text-align: right;
+  user-select: none;
+  min-width: 40px;
+}
+
+.code-content {
+  padding: 16px;
+  color: #c9d1d9;
+  white-space: pre;
+  overflow-x: auto;
+  flex: 1;
+}
+
+/* Syntax Highlighting */
 .json-key { color: #79c0ff; }
-.json-string { color: #a5d6ff; }
+.json-string { color: #7ee787; }
 .json-number { color: #f2cc60; }
 .json-boolean { color: #ff7b72; }
 .json-null { color: var(--text-muted); }

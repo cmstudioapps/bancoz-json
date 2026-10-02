@@ -127,9 +127,10 @@ async function deleteRecord(composedKey) {
   }
 }
 
-// Renderizar cards de dados
+// Renderizar visualizador de código único
 function renderData(searchTerm = '') {
   dataContainer.innerHTML = '';
+  document.getElementById('data-toolbar').style.display = 'flex';
   
   const keys = Object.keys(currentData);
   
@@ -144,6 +145,7 @@ function renderData(searchTerm = '') {
     return;
   }
   
+  let filteredData = {};
   let count = 0;
   
   for (const key of keys) {
@@ -155,23 +157,7 @@ function renderData(searchTerm = '') {
     }
     
     count++;
-    
-    const displayKey = key.includes('::') ? key.split('::').pop() : key;
-    
-    const card = document.createElement('div');
-    card.className = 'record-card';
-    
-    card.innerHTML = `
-      <div class="record-header">
-        <span class="record-key">${displayKey}</span>
-        <button class="btn-delete" title="Deletar registro" onclick="deleteRecord('${key}')">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
-        </button>
-      </div>
-      <div class="record-body">${syntaxHighlight(value)}</div>
-    `;
-    
-    dataContainer.appendChild(card);
+    filteredData[key] = value;
   }
   
   if (count === 0) {
@@ -182,8 +168,41 @@ function renderData(searchTerm = '') {
         </div>
       </div>
     `;
+    return;
   }
+
+  // Gera o JSON formatado
+  const jsonString = JSON.stringify(filteredData, null, 2);
+  const highlighted = syntaxHighlight(jsonString);
+  
+  // Calcula numeração de linhas
+  const lineCount = jsonString.split('\\n').length;
+  let lineNumbersHTML = '';
+  for (let i = 1; i <= lineCount; i++) {
+    lineNumbersHTML += `<div>${i}</div>`;
+  }
+  
+  dataContainer.innerHTML = `
+    <div class="code-viewer">
+      <div class="line-numbers">${lineNumbersHTML}</div>
+      <div class="code-content" id="json-code-content">${highlighted}</div>
+    </div>
+  `;
 }
+
+// Botão de Copiar JSON
+document.getElementById('btn-copy-json').addEventListener('click', () => {
+  const content = document.getElementById('json-code-content');
+  if (content) {
+    // Usamos textContent para pegar o JSON puro sem as tags do syntax highlight
+    navigator.clipboard.writeText(content.textContent).then(() => {
+      const btn = document.getElementById('btn-copy-json');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = '✅ Copiado!';
+      setTimeout(() => btn.innerHTML = originalText, 2000);
+    });
+  }
+});
 
 // Iniciar app
 init();
