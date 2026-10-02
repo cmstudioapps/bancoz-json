@@ -46,10 +46,18 @@ app.on('window-all-closed', () => {
 // IPC: Comunicação entre a UI (Renderer) e o Core (Node.js)
 
 ipcMain.handle('bancoz:info', async () => {
+  let appVersion = '3.0.0';
+  try {
+    const fs = await import('fs/promises');
+    const pkgPath = path.join(__dirname, '..', 'package.json');
+    const pkgData = await fs.readFile(pkgPath, 'utf8');
+    appVersion = JSON.parse(pkgData).version;
+  } catch (err) {}
+
   return {
     path: bancoz.pastaBanco(),
     mode: bancoz.storageMode,
-    version: '2.3.3'
+    version: appVersion
   };
 });
 
