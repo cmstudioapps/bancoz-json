@@ -140,7 +140,6 @@ body {
   text-overflow: ellipsis;
   flex: 1;
   margin-right: 8px;
-  direction: rtl; /* helps showing the end of the path if it's too long */
 }
 
 .badge {

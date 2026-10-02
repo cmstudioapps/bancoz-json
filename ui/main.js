@@ -93,28 +93,41 @@ ipcMain.handle('bancoz:listCollections', async () => {
   let collections = [];
   
   try {
-    // Modo JSON: ler arquivos .json em BANCO Z/ (recursivo ignorando db, configs, llm)
     const jsonIgnores = ['db', 'configs', 'llm'];
-    const jsonBaseLength = baseDir.length + 1; // +1 para barra
+    const jsonBaseLength = baseDir.length + 1;
     const jsonCols = await walkDirRecursively(fs, baseDir, jsonBaseLength, 'json', jsonIgnores);
     collections = collections.concat(jsonCols);
     
-    // Modo Engine: listar pastas em BANCO Z/db/ que contenham wal.log
     const dbPath = path.join(baseDir, 'db');
     const engineBaseLength = dbPath.length + 1;
     const engineCols = await walkDirRecursively(fs, dbPath, engineBaseLength, 'engine', []);
     
-    // Merge de resultados (evita duplicação caso migrado)
     for (const ec of engineCols) {
       const existing = collections.find(c => c.name === ec.name);
       if (!existing) {
         collections.push(ec);
       } else {
-        existing.mode = 'engine'; // Engine tem prioridade visual
+        existing.mode = 'engine';
       }
     }
     
-    return collections;
+    // Group by Root Collection
+    const rootMap = new Map();
+    for (const col of collections) {
+      const rootName = col.name.split('/')[0];
+      if (!rootMap.has(rootName)) {
+        rootMap.set(rootName, col.mode);
+      } else {
+        if (col.mode === 'engine') rootMap.set(rootName, 'engine'); // Engine overrides visually
+      }
+    }
+    
+    const rootCollections = [];
+    for (const [name, mode] of rootMap.entries()) {
+      rootCollections.push({ name, mode });
+    }
+    
+    return rootCollections;
   } catch (err) {
     console.error(err);
     return [];
@@ -123,19 +136,43 @@ ipcMain.handle('bancoz:listCollections', async () => {
 
 ipcMain.handle('bancoz:getCollectionData', async (event, { name, mode }) => {
   try {
-    // Força o modo de storage temporariamente se quisermos ler específico,
-    // mas o ideal é deixar o Bancoz resolver
-    
     let result = {};
+    const baseDir = bancoz.pastaBanco();
+    const fs = await import('fs/promises');
+
     if (mode === 'engine') {
       const engine = bancoz._getEngine();
-      result = await engine.getAll(name);
+      const dbPath = path.join(baseDir, 'db');
+      const engineBaseLength = dbPath.length + 1;
+      const engineCols = await walkDirRecursively(fs, dbPath, engineBaseLength, 'engine', []);
+      
+      for (const col of engineCols) {
+        if (col.name === name || col.name.startsWith(name + '/')) {
+          const data = await engine.getAll(col.name);
+          for (const k in data) {
+             result[`${col.name}::${k}`] = data[k];
+          }
+        }
+      }
     } else {
       bancoz.storage('json');
-      result = await bancoz.ler(name);
+      const jsonIgnores = ['db', 'configs', 'llm'];
+      const jsonBaseLength = baseDir.length + 1;
+      const jsonCols = await walkDirRecursively(fs, baseDir, jsonBaseLength, 'json', jsonIgnores);
+      
+      for (const col of jsonCols) {
+        if (col.name === name || col.name.startsWith(name + '/')) {
+          const data = await bancoz.ler(col.name);
+          if (data && typeof data === 'object') {
+             for (const k in data) {
+                result[`${col.name}::${k}`] = data[k];
+             }
+          }
+        }
+      }
     }
     
-    return result || {};
+    return result;
   } catch (err) {
     console.error(err);
     return { _error: err.message };

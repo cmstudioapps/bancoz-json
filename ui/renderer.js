@@ -106,16 +106,20 @@ function syntaxHighlight(json) {
 }
 
 // Deletar um registro
-async function deleteRecord(key) {
-  if (confirm(`Tem certeza que deseja deletar a chave "${key}"?`)) {
+async function deleteRecord(composedKey) {
+  if (confirm(`Tem certeza que deseja deletar este registro?`)) {
+    const parts = composedKey.split('::');
+    const actualKey = parts.pop();
+    const collection = parts.join('::');
+
     const res = await window.bancozAPI.deleteKey({ 
-      collection: currentCollection, 
-      key: key, 
+      collection: collection, 
+      key: actualKey, 
       mode: currentMode 
     });
     
     if (res.success) {
-      delete currentData[key];
+      delete currentData[composedKey];
       renderData(searchInput.value.toLowerCase());
     } else {
       alert('Erro ao deletar: ' + res.error);
