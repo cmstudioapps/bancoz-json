@@ -1,6 +1,6 @@
 {
   "name": "bancoz",
-  "version": "3.0.7",
+  "version": "3.0.8",
   "description": "Banco de dados JSON local escalável com UI embutida",
   "main": "./bancoz.js",
   "type": "module",

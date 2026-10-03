@@ -9,10 +9,7 @@ const searchInput = document.getElementById('search-input');
 
 let currentCollection = null;
 let currentMode = null;
-let currentRecords = [];  // Array de { key, value, _collection, _mode }
-
-const RECORDS_PER_PAGE = 20;
-let visibleCount = RECORDS_PER_PAGE;
+let currentRecords = [];
 
 // Inicialização
 async function init() {
@@ -24,7 +21,6 @@ async function init() {
   await loadCollections();
   
   searchInput.addEventListener('input', (e) => {
-    visibleCount = RECORDS_PER_PAGE;
     renderData(e.target.value.toLowerCase());
   });
 }
@@ -60,9 +56,7 @@ async function loadCollections() {
 async function selectCollection(name, mode) {
   currentCollection = name;
   currentMode = mode;
-  visibleCount = RECORDS_PER_PAGE;
   
-  // Atualizar visual da lista
   document.querySelectorAll('.collection-item').forEach(el => {
     if (el.querySelector('.collection-name').innerText === name) {
       el.classList.add('active');
@@ -71,7 +65,6 @@ async function selectCollection(name, mode) {
     }
   });
   
-  // Atualizar Header
   currentTitle.innerText = name;
   currentModeBadge.innerText = mode.toUpperCase();
   currentModeBadge.className = `badge ${mode === 'engine' ? 'engine' : ''}`;
@@ -80,7 +73,6 @@ async function selectCollection(name, mode) {
   searchInput.disabled = false;
   searchInput.value = '';
   
-  // Carregar dados
   dataContainer.innerHTML = '<div class="empty-state"><div class="empty-message">Carregando dados...</div></div>';
   
   currentRecords = await window.bancozAPI.getCollectionData({ name, mode });
@@ -110,24 +102,24 @@ function syntaxHighlight(json) {
   });
 }
 
-// Gerar bloco de código com line numbers para um valor
-function buildCodeBlock(value) {
-  const jsonStr = JSON.stringify(value, null, 2);
-  const highlighted = syntaxHighlight(jsonStr);
-  const lines = jsonStr.split('\n');
+// Monta um objeto limpo a partir dos registros, filtrando por busca
+function buildCleanObject(searchTerm) {
+  const cleanObj = {};
   
-  let lineNumbersHTML = '';
-  for (let i = 1; i <= lines.length; i++) {
-    lineNumbersHTML += `<div>${i}</div>`;
+  for (const rec of currentRecords) {
+    if (searchTerm) {
+      const valueStr = typeof rec.value === 'object' ? JSON.stringify(rec.value) : String(rec.value);
+      if (!rec.key.toLowerCase().includes(searchTerm) && !valueStr.toLowerCase().includes(searchTerm)) {
+        continue;
+      }
+    }
+    cleanObj[rec.key] = rec.value;
   }
   
-  return `<div class="code-viewer">
-    <div class="line-numbers">${lineNumbersHTML}</div>
-    <div class="code-content">${highlighted}</div>
-  </div>`;
+  return cleanObj;
 }
 
-// Renderizar registros como blocos visuais separados
+// Renderizar como um único painel de código
 function renderData(searchTerm = '') {
   dataContainer.innerHTML = '';
   document.getElementById('data-toolbar').style.display = 'flex';
@@ -143,16 +135,10 @@ function renderData(searchTerm = '') {
     return;
   }
   
-  // Filtrar registros pelo termo de busca
-  let filtered = currentRecords;
-  if (searchTerm) {
-    filtered = currentRecords.filter(rec => {
-      const valueStr = typeof rec.value === 'object' ? JSON.stringify(rec.value) : String(rec.value);
-      return rec.key.toLowerCase().includes(searchTerm) || valueStr.toLowerCase().includes(searchTerm);
-    });
-  }
+  const cleanObj = buildCleanObject(searchTerm);
+  const keys = Object.keys(cleanObj);
   
-  if (filtered.length === 0) {
+  if (keys.length === 0) {
     dataContainer.innerHTML = `
       <div class="empty-state">
         <div class="empty-message">
@@ -162,45 +148,61 @@ function renderData(searchTerm = '') {
     `;
     return;
   }
+
+  // Gera JSON com espaçamento visual entre registros
+  let jsonLines = ['{'];
+  const entries = Object.entries(cleanObj);
   
-  // Paginação: mostrar apenas os N primeiros
-  const toShow = filtered.slice(0, visibleCount);
-  
-  for (const record of toShow) {
-    const block = document.createElement('div');
-    block.className = 'record-block';
+  for (let i = 0; i < entries.length; i++) {
+    const [key, value] = entries[i];
+    const valueStr = JSON.stringify(value, null, 2);
+    const valueLines = valueStr.split('\n');
     
-    block.innerHTML = `
-      <div class="record-block-header">
-        <span class="record-block-key">${record.key}</span>
-      </div>
-      ${buildCodeBlock(record.value)}
-    `;
+    // Chave do registro
+    if (valueLines.length === 1) {
+      // Valor simples numa linha só
+      const comma = i < entries.length - 1 ? ',' : '';
+      jsonLines.push(`  "${key}": ${valueStr}${comma}`);
+    } else {
+      // Valor objeto/array multi-linha: indentar cada linha
+      jsonLines.push(`  "${key}": ${valueLines[0]}`);
+      for (let j = 1; j < valueLines.length; j++) {
+        const isLast = j === valueLines.length - 1;
+        const comma = (isLast && i < entries.length - 1) ? ',' : '';
+        jsonLines.push(`  ${valueLines[j]}${comma}`);
+      }
+    }
     
-    dataContainer.appendChild(block);
+    // Linha em branco entre registros para separação visual
+    if (i < entries.length - 1) {
+      jsonLines.push('');
+    }
   }
   
-  // Botão "Carregar mais" se houver mais registros
-  if (filtered.length > visibleCount) {
-    const loadMore = document.createElement('button');
-    loadMore.className = 'btn-load-more';
-    loadMore.textContent = `Carregar mais (${filtered.length - visibleCount} restantes)`;
-    loadMore.onclick = () => {
-      visibleCount += RECORDS_PER_PAGE;
-      renderData(searchTerm);
-    };
-    dataContainer.appendChild(loadMore);
+  jsonLines.push('}');
+  
+  const fullJson = jsonLines.join('\n');
+  const highlighted = syntaxHighlight(fullJson);
+  
+  // Line numbers
+  let lineNumbersHTML = '';
+  for (let i = 1; i <= jsonLines.length; i++) {
+    lineNumbersHTML += `<div>${i}</div>`;
   }
+  
+  dataContainer.innerHTML = `
+    <div class="code-viewer">
+      <div class="line-numbers">${lineNumbersHTML}</div>
+      <div class="code-content" id="json-code-content">${highlighted}</div>
+    </div>
+  `;
 }
 
-// Botão de Copiar JSON (copia todos os registros visíveis como um objeto limpo)
+// Botão de Copiar JSON
 document.getElementById('btn-copy-json').addEventListener('click', () => {
   if (!currentRecords || currentRecords.length === 0) return;
   
-  const cleanObj = {};
-  for (const rec of currentRecords) {
-    cleanObj[rec.key] = rec.value;
-  }
+  const cleanObj = buildCleanObject('');
   
   navigator.clipboard.writeText(JSON.stringify(cleanObj, null, 2)).then(() => {
     const btn = document.getElementById('btn-copy-json');
