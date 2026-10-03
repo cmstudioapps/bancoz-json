@@ -9,7 +9,10 @@ const searchInput = document.getElementById('search-input');
 
 let currentCollection = null;
 let currentMode = null;
-let currentData = {};
+let currentRecords = [];  // Array de { key, value, _collection, _mode }
+
+const RECORDS_PER_PAGE = 20;
+let visibleCount = RECORDS_PER_PAGE;
 
 // Inicialização
 async function init() {
@@ -21,6 +24,7 @@ async function init() {
   await loadCollections();
   
   searchInput.addEventListener('input', (e) => {
+    visibleCount = RECORDS_PER_PAGE;
     renderData(e.target.value.toLowerCase());
   });
 }
@@ -56,6 +60,7 @@ async function loadCollections() {
 async function selectCollection(name, mode) {
   currentCollection = name;
   currentMode = mode;
+  visibleCount = RECORDS_PER_PAGE;
   
   // Atualizar visual da lista
   document.querySelectorAll('.collection-item').forEach(el => {
@@ -78,7 +83,7 @@ async function selectCollection(name, mode) {
   // Carregar dados
   dataContainer.innerHTML = '<div class="empty-state"><div class="empty-message">Carregando dados...</div></div>';
   
-  currentData = await window.bancozAPI.getCollectionData({ name, mode });
+  currentRecords = await window.bancozAPI.getCollectionData({ name, mode });
   renderData();
 }
 
@@ -105,36 +110,29 @@ function syntaxHighlight(json) {
   });
 }
 
-// Deletar um registro
-async function deleteRecord(composedKey) {
-  if (confirm(`Tem certeza que deseja deletar este registro?`)) {
-    const parts = composedKey.split('::');
-    const actualKey = parts.pop();
-    const collection = parts.join('::');
-
-    const res = await window.bancozAPI.deleteKey({ 
-      collection: collection, 
-      key: actualKey, 
-      mode: currentMode 
-    });
-    
-    if (res.success) {
-      delete currentData[composedKey];
-      renderData(searchInput.value.toLowerCase());
-    } else {
-      alert('Erro ao deletar: ' + res.error);
-    }
+// Gerar bloco de código com line numbers para um valor
+function buildCodeBlock(value) {
+  const jsonStr = JSON.stringify(value, null, 2);
+  const highlighted = syntaxHighlight(jsonStr);
+  const lines = jsonStr.split('\n');
+  
+  let lineNumbersHTML = '';
+  for (let i = 1; i <= lines.length; i++) {
+    lineNumbersHTML += `<div>${i}</div>`;
   }
+  
+  return `<div class="code-viewer">
+    <div class="line-numbers">${lineNumbersHTML}</div>
+    <div class="code-content">${highlighted}</div>
+  </div>`;
 }
 
-// Renderizar visualizador de código único
+// Renderizar registros como blocos visuais separados
 function renderData(searchTerm = '') {
   dataContainer.innerHTML = '';
   document.getElementById('data-toolbar').style.display = 'flex';
   
-  const keys = Object.keys(currentData);
-  
-  if (keys.length === 0) {
+  if (!currentRecords || currentRecords.length === 0) {
     dataContainer.innerHTML = `
       <div class="empty-state">
         <div class="empty-message">
@@ -145,22 +143,16 @@ function renderData(searchTerm = '') {
     return;
   }
   
-  let filteredData = {};
-  let count = 0;
-  
-  for (const key of keys) {
-    const value = currentData[key];
-    const valueStr = typeof value === 'object' ? JSON.stringify(value) : String(value);
-    
-    if (searchTerm && !key.toLowerCase().includes(searchTerm) && !valueStr.toLowerCase().includes(searchTerm)) {
-      continue;
-    }
-    
-    count++;
-    filteredData[key] = value;
+  // Filtrar registros pelo termo de busca
+  let filtered = currentRecords;
+  if (searchTerm) {
+    filtered = currentRecords.filter(rec => {
+      const valueStr = typeof rec.value === 'object' ? JSON.stringify(rec.value) : String(rec.value);
+      return rec.key.toLowerCase().includes(searchTerm) || valueStr.toLowerCase().includes(searchTerm);
+    });
   }
   
-  if (count === 0) {
+  if (filtered.length === 0) {
     dataContainer.innerHTML = `
       <div class="empty-state">
         <div class="empty-message">
@@ -170,38 +162,52 @@ function renderData(searchTerm = '') {
     `;
     return;
   }
-
-  // Gera o JSON formatado
-  const jsonString = JSON.stringify(filteredData, null, 2);
-  const highlighted = syntaxHighlight(jsonString);
   
-  // Calcula numeração de linhas
-  const lineCount = jsonString.split('\\n').length;
-  let lineNumbersHTML = '';
-  for (let i = 1; i <= lineCount; i++) {
-    lineNumbersHTML += `<div>${i}</div>`;
+  // Paginação: mostrar apenas os N primeiros
+  const toShow = filtered.slice(0, visibleCount);
+  
+  for (const record of toShow) {
+    const block = document.createElement('div');
+    block.className = 'record-block';
+    
+    block.innerHTML = `
+      <div class="record-block-header">
+        <span class="record-block-key">${record.key}</span>
+      </div>
+      ${buildCodeBlock(record.value)}
+    `;
+    
+    dataContainer.appendChild(block);
   }
   
-  dataContainer.innerHTML = `
-    <div class="code-viewer">
-      <div class="line-numbers">${lineNumbersHTML}</div>
-      <div class="code-content" id="json-code-content">${highlighted}</div>
-    </div>
-  `;
+  // Botão "Carregar mais" se houver mais registros
+  if (filtered.length > visibleCount) {
+    const loadMore = document.createElement('button');
+    loadMore.className = 'btn-load-more';
+    loadMore.textContent = `Carregar mais (${filtered.length - visibleCount} restantes)`;
+    loadMore.onclick = () => {
+      visibleCount += RECORDS_PER_PAGE;
+      renderData(searchTerm);
+    };
+    dataContainer.appendChild(loadMore);
+  }
 }
 
-// Botão de Copiar JSON
+// Botão de Copiar JSON (copia todos os registros visíveis como um objeto limpo)
 document.getElementById('btn-copy-json').addEventListener('click', () => {
-  const content = document.getElementById('json-code-content');
-  if (content) {
-    // Usamos textContent para pegar o JSON puro sem as tags do syntax highlight
-    navigator.clipboard.writeText(content.textContent).then(() => {
-      const btn = document.getElementById('btn-copy-json');
-      const originalText = btn.innerHTML;
-      btn.innerHTML = '✅ Copiado!';
-      setTimeout(() => btn.innerHTML = originalText, 2000);
-    });
+  if (!currentRecords || currentRecords.length === 0) return;
+  
+  const cleanObj = {};
+  for (const rec of currentRecords) {
+    cleanObj[rec.key] = rec.value;
   }
+  
+  navigator.clipboard.writeText(JSON.stringify(cleanObj, null, 2)).then(() => {
+    const btn = document.getElementById('btn-copy-json');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '✅ Copiado!';
+    setTimeout(() => btn.innerHTML = originalText, 2000);
+  });
 });
 
 // Iniciar app

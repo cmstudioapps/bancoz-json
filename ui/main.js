@@ -144,7 +144,7 @@ ipcMain.handle('bancoz:listCollections', async () => {
 
 ipcMain.handle('bancoz:getCollectionData', async (event, { name, mode }) => {
   try {
-    let result = {};
+    const records = [];
     const baseDir = bancoz.pastaBanco();
     const fs = await import('fs/promises');
 
@@ -158,7 +158,12 @@ ipcMain.handle('bancoz:getCollectionData', async (event, { name, mode }) => {
         if (col.name === name || col.name.startsWith(name + '/')) {
           const data = await engine.getAll(col.name);
           for (const k in data) {
-             result[`${col.name}::${k}`] = data[k];
+            records.push({
+              key: k,
+              value: data[k],
+              _collection: col.name,
+              _mode: 'engine'
+            });
           }
         }
       }
@@ -172,18 +177,23 @@ ipcMain.handle('bancoz:getCollectionData', async (event, { name, mode }) => {
         if (col.name === name || col.name.startsWith(name + '/')) {
           const data = await bancoz.ler(col.name);
           if (data && typeof data === 'object') {
-             for (const k in data) {
-                result[`${col.name}::${k}`] = data[k];
-             }
+            for (const k in data) {
+              records.push({
+                key: k,
+                value: data[k],
+                _collection: col.name,
+                _mode: 'json'
+              });
+            }
           }
         }
       }
     }
     
-    return result;
+    return records;
   } catch (err) {
     console.error(err);
-    return { _error: err.message };
+    return [];
   }
 });
 
