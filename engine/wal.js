@@ -23,6 +23,7 @@ export class WAL {
   constructor(filePath) {
     this._filePath = filePath;
     this._stream = null;
+    this._drainPromise = null;
     this._pendingWrites = 0;
     this._closed = false;
   }
@@ -44,8 +45,16 @@ export class WAL {
 
     // Esperar o stream estar pronto
     await new Promise((resolve, reject) => {
-      this._stream.on('open', resolve);
-      this._stream.on('error', reject);
+      const onOpen = () => {
+        this._stream.removeListener('error', onError);
+        resolve();
+      };
+      const onError = (err) => {
+        this._stream.removeListener('open', onOpen);
+        reject(err);
+      };
+      this._stream.once('open', onOpen);
+      this._stream.once('error', onError);
     });
 
     this._closed = false;
@@ -65,15 +74,25 @@ export class WAL {
 
     const line = JSON.stringify(entry) + '\n';
 
+    // Se já estamos esperando o drain, aplicamos backpressure antes de escrever mais
+    if (this._drainPromise) {
+      await this._drainPromise;
+    }
+
     return new Promise((resolve, reject) => {
       const ok = this._stream.write(line, 'utf8', (err) => {
         if (err) reject(err);
         else resolve();
       });
 
-      // Se o buffer interno estiver cheio, espera o drain
-      if (!ok) {
-        this._stream.once('drain', resolve);
+      // Se o buffer interno estiver cheio, cria uma única promise de drain
+      if (!ok && !this._drainPromise) {
+        this._drainPromise = new Promise((res) => {
+          this._stream.once('drain', () => {
+            this._drainPromise = null;
+            res();
+          });
+        });
       }
     });
   }
@@ -194,11 +213,14 @@ export class WAL {
    */
   async _closeStream() {
     return new Promise((resolve, reject) => {
+      const onError = (err) => reject(err);
+      this._stream.once('error', onError);
+
       this._stream.end(() => {
+        this._stream.removeListener('error', onError);
         this._closed = true;
         resolve();
       });
-      this._stream.on('error', reject);
     });
   }
 }
